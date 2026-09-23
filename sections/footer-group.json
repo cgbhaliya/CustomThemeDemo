@@ -1,0 +1,297 @@
+/*
+ * ------------------------------------------------------------
+ * IMPORTANT: The contents of this file are auto-generated.
+ *
+ * This file may be updated by the Shopify admin theme editor
+ * or related systems. Please exercise caution as any changes
+ * made to this file may be overwritten.
+ * ------------------------------------------------------------
+ */
+{
+  "type": "footer",
+  "name": "Footer",
+  "sections": {
+    "custom_faq_JpUjxb": {
+      "type": "custom-faq",
+      "blocks": {
+        "faq_item_8AjBEE": {
+          "type": "faq_item",
+          "settings": {
+            "question": "Do you deliver across the UK?",
+            "answer": "<p>Yes. UK mainland delivery is included in the chair price. Delivery to the Scottish Highlands, rest of the UK and Europe is quoted on request.</p>"
+          }
+        },
+        "faq_item_DnpJ3G": {
+          "type": "faq_item",
+          "settings": {
+            "question": "What is your return policy?",
+            "answer": "<p>We accept returns within 30 days of purchase.</p>"
+          }
+        },
+        "faq_item_Gtwgm6": {
+          "type": "faq_item",
+          "settings": {
+            "question": "How quickly do you respond to quote requests?",
+            "answer": "<p>Quotes are returned the same day. The maximum turnaround is 24 hours.</p>"
+          }
+        },
+        "faq_item_nJWEKY": {
+          "type": "faq_item",
+          "settings": {
+            "question": "How long have UK Lab Chairs been supplying laboratory seating?",
+            "answer": "<p>UK Lab Chairs is a sub-brand of Mark Finn Lab Furniture, established in 1986. We have over 40 years' experience supplying laboratory chairs, stools and technical seating to UK schools, universities, NHS trusts, pharma and biotech firms, and engineering companies.</p>"
+          }
+        },
+        "faq_item_yV9YXX": {
+          "type": "faq_item",
+          "settings": {
+            "question": "Who are your customers?",
+            "answer": "<p>Our customers include the University of Oxford, McLaren F1, Moderna, Bristol Myers Squibb, Guy's & St Thomas' NHS Foundation Trust, Dyson and Mitsubishi, alongside hundreds of UK schools, colleges, universities and industrial laboratories.</p>"
+          }
+        },
+        "faq_item_nntxKr": {
+          "type": "faq_item",
+          "settings": {
+            "question": "Do you accept purchase orders?",
+            "answer": "<p>Yes. Purchase orders are accepted from schools, colleges, universities, NHS trusts, government organisations and registered businesses. A VAT invoice is supplied. Our trading name on finance systems is Mark Finn Lab Furniture (or Lab Tables), in case procurement teams need to match records.</p>"
+          }
+        },
+        "faq_item_EETFnR": {
+          "type": "faq_item",
+          "settings": {
+            "question": "Can I order a small quantity, or do I need to buy in bulk?",
+            "answer": "<p>Any quantity. Orders range from a single replacement chair to full laboratory seating supply.</p>"
+          }
+        },
+        "faq_item_iRDKWb": {
+          "type": "faq_item",
+          "settings": {
+            "question": "What guarantee do the chairs come with?",
+            "answer": "<p>Every chair comes with a 5-year guarantee against normal wear and tear, from the date of delivery, when used under normal conditions and during a conventional working day.</p>"
+          }
+        },
+        "faq_item_jKPkme": {
+          "type": "faq_item",
+          "settings": {
+            "question": "What's the difference between a lab chair and a draughtsman chair?",
+            "answer": "<p>A standard lab chair is designed for seated or bench-height work, with a seat height that adjusts roughly 400–835 mm depending on model. A draughtsman chair is a high chair with an extended gas lift and footring, designed for use at tall standing benches or drawing boards. Both are available upholstered, in PU, or with anti-static (ESD) specification.</p>"
+          }
+        }
+      },
+      "block_order": [
+        "faq_item_8AjBEE",
+        "faq_item_DnpJ3G",
+        "faq_item_Gtwgm6",
+        "faq_item_nJWEKY",
+        "faq_item_yV9YXX",
+        "faq_item_nntxKr",
+        "faq_item_EETFnR",
+        "faq_item_iRDKWb",
+        "faq_item_jKPkme"
+      ],
+      "custom_css": [],
+      "name": "FAQ",
+      "settings": {
+        "title": "FAQ",
+        "color_scheme": "scheme-1"
+      }
+    },
+    "footer_m9NzUG": {
+      "type": "footer",
+      "blocks": {
+        "group_H6VpwJ": {
+          "type": "group",
+          "settings": {
+            "content_direction": "column",
+            "vertical_on_mobile": true,
+            "horizontal_alignment": "flex-start",
+            "vertical_alignment": "center",
+            "align_baseline": false,
+            "horizontal_alignment_flex_direction_column": "flex-start",
+            "vertical_alignment_flex_direction_column": "center",
+            "gap": 6,
+            "width": "fill",
+            "custom_width": 100,
+            "width_mobile": "fill",
+            "custom_width_mobile": 100,
+            "height": "fit",
+            "custom_height": 100,
+            "inherit_color_scheme": true,
+            "color_scheme": "",
+            "background_media": "none",
+            "video_position": "cover",
+            "background_image_position": "cover",
+            "border": "none",
+            "border_width": 1,
+            "border_opacity": 100,
+            "border_radius": 0,
+            "toggle_overlay": false,
+            "overlay_color": "#00000026",
+            "overlay_style": "solid",
+            "gradient_direction": "to top",
+            "link": "",
+            "open_in_new_tab": false,
+            "placeholder": "",
+            "padding-block-start": 0,
+            "padding-block-end": 0,
+            "padding-inline-start": 0,
+            "padding-inline-end": 0
+          },
+          "blocks": {
+            "text_LWt8Pz": {
+              "type": "text",
+              "settings": {
+                "text": "<h2>Join our email list</h2>",
+                "width": "100%",
+                "max_width": "normal",
+                "alignment": "left",
+                "type_preset": "h4",
+                "font": "var(--font-body--family)",
+                "font_size": "1rem",
+                "line_height": "normal",
+                "letter_spacing": "normal",
+                "case": "none",
+                "wrap": "pretty",
+                "color": "var(--color-foreground)",
+                "background": false,
+                "background_color": "#00000026",
+                "corner_radius": 0,
+                "padding-block-start": 0,
+                "padding-block-end": 0,
+                "padding-inline-start": 0,
+                "padding-inline-end": 0
+              },
+              "blocks": {}
+            },
+            "text_f9CFLH": {
+              "type": "text",
+              "settings": {
+                "text": "<p>Get exclusive deals and early access to new products.</p>",
+                "width": "100%",
+                "max_width": "normal",
+                "alignment": "left",
+                "type_preset": "rte",
+                "font": "var(--font-body--family)",
+                "font_size": "1rem",
+                "line_height": "normal",
+                "letter_spacing": "normal",
+                "case": "none",
+                "wrap": "pretty",
+                "color": "var(--color-foreground)",
+                "background": false,
+                "background_color": "#00000026",
+                "corner_radius": 0,
+                "padding-block-start": 0,
+                "padding-block-end": 0,
+                "padding-inline-start": 0,
+                "padding-inline-end": 0
+              },
+              "blocks": {}
+            }
+          },
+          "block_order": [
+            "text_LWt8Pz",
+            "text_f9CFLH"
+          ]
+        },
+        "email_signup_crihX7": {
+          "type": "email-signup",
+          "settings": {
+            "width": "fill",
+            "custom_width": 100,
+            "inherit_color_scheme": true,
+            "color_scheme": "",
+            "heading": "",
+            "heading_preset": "h3",
+            "border_style": "all",
+            "border_width": 1,
+            "border_radius": 100,
+            "input_type_preset": "paragraph",
+            "style_class": "button-unstyled",
+            "display_type": "arrow",
+            "label": "Sign up",
+            "integrated_button": true,
+            "button_type_preset": "paragraph",
+            "padding-block-start": 0,
+            "padding-block-end": 0,
+            "padding-inline-start": 0,
+            "padding-inline-end": 0
+          },
+          "blocks": {}
+        }
+      },
+      "block_order": [
+        "group_H6VpwJ",
+        "email_signup_crihX7"
+      ],
+      "name": "t:names.footer",
+      "settings": {
+        "section_width": "page-width",
+        "gap": 20,
+        "color_scheme": "scheme-1",
+        "padding-block-start": 30,
+        "padding-block-end": 30
+      }
+    },
+    "footer_utilities_jLGE8U": {
+      "type": "footer-utilities",
+      "blocks": {
+        "footer_copyright_jweRK8": {
+          "type": "footer-copyright",
+          "settings": {
+            "show_powered_by": true,
+            "font_size": "0.75rem",
+            "case": "none"
+          },
+          "blocks": {}
+        },
+        "footer_policy_list_VCdnpa": {
+          "type": "footer-policy-list",
+          "settings": {
+            "font_size": "0.75rem",
+            "case": "none"
+          },
+          "blocks": {}
+        },
+        "social_links_Ew63Kq": {
+          "type": "social-links",
+          "settings": {
+            "facebook_url": "https://www.facebook.com/",
+            "instagram_url": "https://www.instagram.com/",
+            "youtube_url": "https://www.youtube.com/",
+            "tiktok_url": "https://www.tiktok.com/",
+            "twitter_url": "https://x.com/",
+            "threads_url": "",
+            "linkedin_url": "",
+            "bluesky_url": "",
+            "snapchat_url": "",
+            "pinterest_url": "",
+            "tumblr_url": "",
+            "vimeo_url": "",
+            "custom_url": ""
+          },
+          "blocks": {}
+        }
+      },
+      "block_order": [
+        "footer_copyright_jweRK8",
+        "footer_policy_list_VCdnpa",
+        "social_links_Ew63Kq"
+      ],
+      "name": "t:names.utilities",
+      "settings": {
+        "section_width": "page-width",
+        "gap": 24,
+        "divider_thickness": 0,
+        "color_scheme": "",
+        "padding-block-start": 20,
+        "padding-block-end": 48
+      }
+    }
+  },
+  "order": [
+    "custom_faq_JpUjxb",
+    "footer_m9NzUG",
+    "footer_utilities_jLGE8U"
+  ]
+}
