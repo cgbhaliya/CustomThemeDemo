@@ -5,13 +5,14 @@
 #  .\shop.ps1 pull                     Get latest: git pull + download changes from Shopify
 #  .\shop.ps1 push "message"           Save work to git only (commit + push), no Shopify
 #  .\shop.ps1 deploy "message"         Commit + push to git, THEN publish theme to Shopify
+#  .\shop.ps1 autopull                 Same as pull, but never prompts (run by Claude after you agree)
 #
 #  Options:  -Env production|staging   -Yes (skip confirm)   -IncludeSettings
 # =============================================================================
 
 param(
     [Parameter(Position = 0)]
-    [ValidateSet("install", "deploy", "pull", "push", "help")]
+    [ValidateSet("install", "deploy", "pull", "push", "autopull", "session-check", "help")]
     [string]$Action = "help",
 
     [Parameter(Position = 1)]
@@ -61,12 +62,14 @@ function Refresh-Path {
 # Makes sure git can authenticate to GitHub using GitHub CLI (gh).
 # Runs once per command; safe to repeat.
 $script:GitAuthDone = $false
+$script:NonInteractive = $false
 function Ensure-GitAuth {
     if ($script:GitAuthDone) { return }
     $url = "$(git remote get-url origin 2>&1)"
     if ($LASTEXITCODE -ne 0 -or $url -notmatch "^https://github\.com/") { $script:GitAuthDone = $true; return }
 
     if (-not (Has-Command "gh")) {
+        if ($script:NonInteractive) { Fail "GitHub CLI not installed. Run .\shop.ps1 pull once in the VS Code terminal." }
         Warn "GitHub CLI not found - installing..."
         if (Has-Command "winget") {
             winget install --id GitHub.cli -e --silent --accept-source-agreements --accept-package-agreements
@@ -80,6 +83,7 @@ function Ensure-GitAuth {
 
     gh auth status --hostname github.com 2>&1 | Out-Null
     if ($LASTEXITCODE -ne 0) {
+        if ($script:NonInteractive) { Fail "Not signed in to GitHub. Run .\shop.ps1 pull once in the VS Code terminal to sign in." }
         Info "`nSign in to GitHub - copy the code shown below, then approve in the browser..."
         gh auth login --hostname github.com --git-protocol https --web
         if ($LASTEXITCODE -ne 0) {
@@ -193,7 +197,7 @@ function Write-SupportFiles {
     }
     # Keep non-theme files out of Shopify uploads
     if (-not (Test-Path ".shopifyignore")) {
-        Write-NoBom ".shopifyignore" "shop.ps1`n*.md`n.vscode/`n.gitignore`n.shopifyignore`nshopify.theme.toml`n"
+        Write-NoBom ".shopifyignore" "shop.ps1`n*.md`n.vscode/`n.claude/`n.gitignore`n.shopifyignore`nshopify.theme.toml`n"
     }
 }
 
@@ -316,8 +320,66 @@ function Do-Push {
     Ok "Saved to git."
 }
 
+# Safe, non-interactive pull for the Claude Code SessionStart hook
+function Do-AutoPull {
+    $script:NonInteractive = $true
+    git rev-parse --is-inside-work-tree 2>&1 | Out-Null
+    if ($LASTEXITCODE -ne 0) { Write-Host "[auto-pull] Not a git repository - skipped."; exit 0 }
+    if (-not (Config-Filled) -and -not (Test-Path $TomlFile)) {
+        Write-Host "[auto-pull] Project not installed yet - run .\shop.ps1 install in the VS Code terminal. Skipped."; exit 0
+    }
+    if (-not (Has-Command "shopify")) {
+        Write-Host "[auto-pull] Shopify CLI not installed - run .\shop.ps1 install in the VS Code terminal. Skipped."; exit 0
+    }
+    if (Has-Changes) {
+        Write-Host "[auto-pull] Skipped: there are uncommitted local changes. Deploy or push them first, then run pull."
+        git status --short
+        exit 0
+    }
+    Write-Host "[auto-pull] Syncing latest from GitHub and Shopify ($Env)..."
+    Do-Pull
+    Write-Host "[auto-pull] Done. Latest commit: $(git log -1 --format='%h %s')"
+}
+
+# Read-only status check for the Claude Code SessionStart hook. Never pulls or changes anything.
+function Do-SessionCheck {
+    $script:NonInteractive = $true
+    $pullCmd = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./shop.ps1 autopull"
+    git rev-parse --is-inside-work-tree 2>&1 | Out-Null
+    if ($LASTEXITCODE -ne 0) { Write-Host "[session-check] Not a git repository."; exit 0 }
+    if (-not (Config-Filled) -and -not (Test-Path $TomlFile)) {
+        Write-Host "[session-check] Project not installed yet. Tell the user to run .\shop.ps1 install in the VS Code terminal. Do not offer a pull."
+        exit 0
+    }
+
+    $changes = @(git status --porcelain)
+    $behind = "unknown"
+    $env:GIT_TERMINAL_PROMPT = "0"
+    if (git remote) {
+        git fetch --quiet 2>&1 | Out-Null
+        if ($LASTEXITCODE -eq 0) {
+            $n = git rev-list --count "HEAD..@{u}" 2>&1
+            if ($LASTEXITCODE -eq 0) { $behind = "$n" }
+        } else { $behind = "unknown (GitHub not reachable or not signed in)" }
+    }
+
+    Write-Host "[session-check] Shopify theme project status:"
+    Write-Host "  - Uncommitted local changes: $($changes.Count)"
+    Write-Host "  - Commits on GitHub not yet pulled: $behind"
+    Write-Host "  - Live Shopify theme: not checked (the pull compares it)"
+    Write-Host ""
+    Write-Host "INSTRUCTION FOR CLAUDE: In your first reply of this session, before working on the user's request,"
+    Write-Host "show this status in one or two lines and ask: 'Pull the latest from GitHub and the live Shopify theme now? (yes/no)'."
+    Write-Host "Wait for the answer. If yes, run: $pullCmd  and report the result, then continue with the request."
+    Write-Host "If no, continue with the request without pulling."
+    if ($changes.Count -gt 0) {
+        Write-Host "Note: there are uncommitted changes, so the pull will be skipped until they are deployed or pushed. Mention this when asking."
+    }
+    exit 0
+}
+
 function Show-Help {
-    Get-Content $PSCommandPath | Select-Object -Skip 1 -First 10 | ForEach-Object { $_ -replace '^#\s?', '' }
+    Get-Content $PSCommandPath | Select-Object -Skip 1 -First 11 | ForEach-Object { $_ -replace '^#\s?', '' }
 }
 
 switch ($Action) {
@@ -325,5 +387,7 @@ switch ($Action) {
     "pull"    { Do-Pull }
     "push"    { Do-Push }
     "deploy"  { Do-Deploy }
+    "autopull" { Do-AutoPull }
+    "session-check" { Do-SessionCheck }
     default   { Show-Help }
 }

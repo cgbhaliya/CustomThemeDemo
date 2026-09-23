@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./shop.ps1 session-check",
+            "timeout": 60
+          }
+        ]
+      }
+    ]
+  }
+}
