@@ -6,13 +6,16 @@
 #  .\shop.ps1 push "message"           Save work to git only (commit + push), no Shopify
 #  .\shop.ps1 deploy "message"         Commit + push to git, THEN publish theme to Shopify
 #  .\shop.ps1 autopull                 Same as pull, but never prompts (run by Claude after you agree)
+#  .\shop.ps1 themes -SetStore <domain>   List store themes (no prompts; used by Claude)
+#  .\shop.ps1 install -SetStore <domain> -SetTheme <id> [-SetStaging <id>] -NoPrompt
+#                                       Install with answers given up front (used by Claude)
 #
 #  Options:  -Env production|staging   -Yes (skip confirm)   -IncludeSettings
 # =============================================================================
 
 param(
     [Parameter(Position = 0)]
-    [ValidateSet("install", "deploy", "pull", "push", "autopull", "session-check", "help")]
+    [ValidateSet("install", "deploy", "pull", "push", "autopull", "session-check", "themes", "help")]
     [string]$Action = "help",
 
     [Parameter(Position = 1)]
@@ -20,7 +23,13 @@ param(
 
     [string]$Env = "production",
     [switch]$Yes,
-    [switch]$IncludeSettings
+    [switch]$IncludeSettings,
+
+    # Answers for install/themes so they can run without prompts
+    [string]$SetStore,
+    [string]$SetTheme,
+    [string]$SetStaging,
+    [switch]$NoPrompt
 )
 
 # =============================================================================
@@ -202,34 +211,76 @@ function Write-SupportFiles {
 }
 
 # ----------------------------------------------------------------- actions ---
+function Apply-SetParams {
+    if ($SetStore)   { Set-Setting "StoreDomain" (Normalize-Store $SetStore) }
+    if ($SetTheme)   {
+        if ($SetTheme.Trim() -notmatch "^\d+$") { Fail "-SetTheme must be a numeric theme ID." }
+        Set-Setting "ProductionThemeId" $SetTheme.Trim()
+    }
+    if ($SetStaging) {
+        if ($SetStaging.Trim() -notmatch "^\d+$") { Fail "-SetStaging must be a numeric theme ID." }
+        Set-Setting "StagingThemeId" $SetStaging.Trim()
+    }
+}
+
+function Get-Themes([string]$store) {
+    Info "Fetching themes from $store..."
+    $raw = shopify theme list --store $store --json 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        Fail "Could not list themes (Shopify login needed or no access to $store). Run '.\shop.ps1 install' once in the VS Code terminal to log in.`n$raw"
+    }
+    try {
+        $jsonText = ($raw | Out-String)
+        $jsonText = $jsonText.Substring($jsonText.IndexOf("["))
+        $themes = @($jsonText | ConvertFrom-Json)
+    } catch { Fail "Could not read the theme list from Shopify CLI:`n$raw" }
+    if ($themes.Count -eq 0) { Fail "No themes found on $store." }
+    return $themes
+}
+
+# Non-interactive theme list, for Claude to show in chat
+function Do-Themes {
+    $script:NonInteractive = $true
+    if ($SetStore) { Set-Setting "StoreDomain" (Normalize-Store $SetStore) }
+    if (-not $StoreDomain.Trim()) { Fail "NEED_STORE: pass -SetStore <handle>.myshopify.com" }
+    Ensure-Tools
+    $store = Normalize-Store $StoreDomain
+    $themes = Get-Themes $store
+    Write-Host "THEMES for ${store}:"
+    foreach ($t in $themes) {
+        $role = if ($t.role -eq "live" -or $t.role -eq "main") { "LIVE" } else { $t.role }
+        Write-Host ("  {0}  [{1}]  {2}" -f $t.id, $role, $t.name)
+    }
+}
+
 function Do-Install {
+    if ($NoPrompt) { $script:NonInteractive = $true }
     git rev-parse --is-inside-work-tree 2>&1 | Out-Null
     if ($LASTEXITCODE -ne 0) { Fail "Clone the repo first, then run install inside it." }
     Ensure-Tools
+
+    # --- Answers passed as parameters (from Claude chat or scripts) ---
+    Apply-SetParams
 
     # --- Store domain: from settings, or ask once and save into shop.ps1 ---
     if (-not $StoreDomain.Trim()) {
         if (Test-Path $TomlFile) {
             Ok "Using existing shopify.theme.toml"
+        } elseif ($script:NonInteractive) {
+            Fail "NEED_STORE: store domain not set. Pass -SetStore <handle>.myshopify.com"
         } else {
             $d = (Read-Host "Store domain (e.g. client-one.myshopify.com)").Trim()
             if (-not $d) { Fail "Store domain is required." }
-            Set-Setting "StoreDomain" $d
+            Set-Setting "StoreDomain" (Normalize-Store $d)
         }
     }
 
     # --- Theme IDs: from settings, or pick from a list and save into shop.ps1 ---
     if ($StoreDomain.Trim() -and -not $ProductionThemeId.Trim()) {
-        $store = Normalize-Store $StoreDomain
-        Info "`nFetching themes from $store (a browser login may open the first time)..."
-        $raw = shopify theme list --store $store --json 2>&1
-        Check "shopify theme list"
-        try {
-            $jsonText = ($raw | Out-String)
-            $jsonText = $jsonText.Substring($jsonText.IndexOf("["))
-            $themes = @($jsonText | ConvertFrom-Json)
-        } catch { Fail "Could not read the theme list from Shopify CLI:`n$raw" }
-        if ($themes.Count -eq 0) { Fail "No themes found on $store." }
+        if ($script:NonInteractive) {
+            Fail "NEED_THEME: production theme not set. Run 'shop.ps1 themes' to list them, then pass -SetTheme <id>"
+        }
+        $themes = Get-Themes (Normalize-Store $StoreDomain)
 
         $prod = Select-Theme $themes "Select the PRODUCTION theme" $false
         Set-Setting "ProductionThemeId" "$($prod.id)"
@@ -348,7 +399,7 @@ function Do-SessionCheck {
     git rev-parse --is-inside-work-tree 2>&1 | Out-Null
     if ($LASTEXITCODE -ne 0) { Write-Host "[session-check] Not a git repository."; exit 0 }
     if (-not (Config-Filled) -and -not (Test-Path $TomlFile)) {
-        Write-Host "[session-check] Project not installed yet. Tell the user to run .\shop.ps1 install in the VS Code terminal. Do not offer a pull."
+        Write-Host "[session-check] Project not installed yet. In your first reply, tell the user and offer to install it here by following the 'Installing' steps in CLAUDE.md. Do not offer a pull."
         exit 0
     }
 
@@ -379,7 +430,7 @@ function Do-SessionCheck {
 }
 
 function Show-Help {
-    Get-Content $PSCommandPath | Select-Object -Skip 1 -First 11 | ForEach-Object { $_ -replace '^#\s?', '' }
+    Get-Content $PSCommandPath | Select-Object -Skip 1 -First 14 | ForEach-Object { $_ -replace '^#\s?', '' }
 }
 
 switch ($Action) {
@@ -389,5 +440,6 @@ switch ($Action) {
     "deploy"  { Do-Deploy }
     "autopull" { Do-AutoPull }
     "session-check" { Do-SessionCheck }
+    "themes"  { Do-Themes }
     default   { Show-Help }
 }
