@@ -1,0 +1,6 @@
+shop.ps1
+*.md
+.vscode/
+.gitignore
+.shopifyignore
+shopify.theme.toml
