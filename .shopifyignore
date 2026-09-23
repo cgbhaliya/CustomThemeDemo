@@ -1,10 +1,12 @@
 shop.ps1
 shopify.theme.toml
+.shopify/*
 *.md
 README*
 CLAUDE.md
 .claude/*
 .vscode/*
+.vs/*
 .github/*
 .idea/*
 .gitignore

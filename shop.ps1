@@ -2,10 +2,11 @@
 #  shop.ps1 - Shopify theme + Git helper (single file, keep it in the repo root)
 #
 #  .\shop.ps1 install                  First time: set store, download theme, commit, push to git
-#  .\shop.ps1 pull                     Get latest: git pull + download changes from Shopify
+#  .\shop.ps1 pull                     git pull, then preview live Shopify changes and ask before overwriting
 #  .\shop.ps1 push "message"           Save work to git only (commit + push), no Shopify
 #  .\shop.ps1 deploy "message"         Commit + push to git, THEN publish theme to Shopify
-#  .\shop.ps1 autopull                 Same as pull, but never prompts (run by Claude after you agree)
+#  .\shop.ps1 autopull                 git pull + Shopify preview, no prompts (used by Claude)
+#  .\shop.ps1 apply-shopify [-Files "a,b"]  Apply the previewed Shopify changes (all or listed files)
 #  .\shop.ps1 themes -SetStore <domain>   List store themes (no prompts; used by Claude)
 #  .\shop.ps1 install -SetStore <domain> -SetTheme <id> [-SetStaging <id>] -NoPrompt
 #                                       Install with answers given up front (used by Claude)
@@ -15,7 +16,7 @@
 
 param(
     [Parameter(Position = 0)]
-    [ValidateSet("install", "deploy", "pull", "push", "autopull", "session-check", "themes", "help")]
+    [ValidateSet("install", "deploy", "pull", "push", "autopull", "apply-shopify", "session-check", "themes", "help")]
     [string]$Action = "help",
 
     [Parameter(Position = 1)]
@@ -29,7 +30,10 @@ param(
     [string]$SetStore,
     [string]$SetTheme,
     [string]$SetStaging,
-    [switch]$NoPrompt
+    [switch]$NoPrompt,
+
+    # apply-shopify: comma-separated theme paths to take from Shopify (default: all)
+    [string]$Files
 )
 
 # =============================================================================
@@ -37,8 +41,8 @@ param(
 #  Set StoreDomain; leave theme IDs "" and install will let you pick a theme
 #  and save the IDs here automatically.
 # =============================================================================
-$StoreDomain       = "customthemedemo.myshopify.com"   # e.g. "client-one.myshopify.com"
-$ProductionThemeId = "148640858181"   # e.g. "123456789012"   (find with: shopify theme list --store <domain>)
+$StoreDomain       = ""   # e.g. "client-one.myshopify.com"
+$ProductionThemeId = ""   # e.g. "123456789012"   (find with: shopify theme list --store <domain>)
 $StagingThemeId    = ""   # optional, e.g. "234567890123" - leave "" if no staging theme
 # =============================================================================
 
@@ -203,9 +207,9 @@ function Ensure-Tools {
 # Files that must never be uploaded to Shopify. NOTE: .shopifyignore applies to pull too,
 # so only non-theme files belong here (never config/settings_data.json etc.).
 $ShopifyIgnoreLines = @(
-    "shop.ps1", "shopify.theme.toml",
+    "shop.ps1", "shopify.theme.toml", ".shopify/*",
     "*.md", "README*", "CLAUDE.md",
-    ".claude/*", ".vscode/*", ".github/*", ".idea/*",
+    ".claude/*", ".vscode/*", ".vs/*", ".github/*", ".idea/*",
     ".gitignore", ".gitattributes", ".shopifyignore", ".editorconfig",
     ".env", ".env.*",
     "package.json", "package-lock.json", "yarn.lock", "pnpm-lock.yaml", "node_modules/*",
@@ -213,7 +217,7 @@ $ShopifyIgnoreLines = @(
 )
 $GitIgnoreLines = @(
     "node_modules/", ".DS_Store", "Thumbs.db", ".env", ".env.*", "*.log",
-    ".shopify/", ".claude/settings.local.json"
+    ".shopify/", ".claude/settings.local.json", ".vs/"
 )
 
 # Creates the file, or appends any missing lines to an existing one
@@ -377,6 +381,100 @@ function Do-Deploy {
     Ok "`nDeployed to $Env. Tagged as $tag"
 }
 
+$ThemeDirs  = @("assets", "blocks", "config", "layout", "locales", "sections", "snippets", "templates")
+$TextExts   = @(".liquid", ".json", ".js", ".css", ".scss", ".svg", ".txt", ".md", ".html", ".xml")
+$PreviewDir = Join-Path $PSScriptRoot ".shopify\preview"
+
+function Get-Target([string]$envName) {
+    $t = [IO.File]::ReadAllText($TomlFile)
+    $m = [regex]::Match($t, "\[environments\.$envName\][^\[]*?store\s*=\s*""([^""]+)""[^\[]*?theme\s*=\s*""([^""]+)""")
+    if (-not $m.Success) { Fail "Environment '$envName' not found in shopify.theme.toml" }
+    return @{ Store = $m.Groups[1].Value; Theme = $m.Groups[2].Value }
+}
+
+# Hash that ignores CRLF/LF differences in text files (Windows git vs Shopify)
+$Sha = [Security.Cryptography.SHA256]::Create()
+function Get-NormHash([string]$file) {
+    if ($TextExts -contains [IO.Path]::GetExtension($file).ToLower()) {
+        $bytes = [Text.Encoding]::UTF8.GetBytes(([IO.File]::ReadAllText($file)).Replace("`r", ""))
+    } else {
+        $bytes = [IO.File]::ReadAllBytes($file)
+    }
+    return [BitConverter]::ToString($Sha.ComputeHash($bytes))
+}
+
+function Get-ThemeFiles([string]$root) {
+    $map = @{}
+    foreach ($d in $ThemeDirs) {
+        $dir = Join-Path $root $d
+        if (-not (Test-Path $dir)) { continue }
+        Get-ChildItem $dir -Recurse -File | ForEach-Object {
+            $rel = $_.FullName.Substring($root.TrimEnd('\').Length + 1) -replace '\\', '/'
+            $map[$rel] = $_.FullName
+        }
+    }
+    return $map
+}
+
+# M = changed on Shopify, A = only on Shopify (new), D = only local (not on Shopify)
+function Compare-Theme {
+    $remote = Get-ThemeFiles $PreviewDir
+    $local  = Get-ThemeFiles $PSScriptRoot
+    $out = @()
+    foreach ($k in ($remote.Keys | Sort-Object)) {
+        if (-not $local.ContainsKey($k)) { $out += [pscustomobject]@{ Type = "A"; Path = $k } }
+        elseif ((Get-NormHash $remote[$k]) -ne (Get-NormHash $local[$k])) { $out += [pscustomobject]@{ Type = "M"; Path = $k } }
+    }
+    foreach ($k in ($local.Keys | Sort-Object)) {
+        if (-not $remote.ContainsKey($k)) { $out += [pscustomobject]@{ Type = "D"; Path = $k } }
+    }
+    return ,$out
+}
+
+function Show-Changes($changes) {
+    $label = @{ M = "changed on Shopify - local file would be overwritten";
+                A = "new on Shopify - would be added locally";
+                D = "not on Shopify - local file would be deleted" }
+    Write-Host "SHOPIFY_CHANGES: $($changes.Count)"
+    $i = 1
+    foreach ($c in $changes) { Write-Host ("  {0,2}) {1}  {2}   ({3})" -f $i, $c.Type, $c.Path, $label[$c.Type]); $i++ }
+}
+
+# Downloads the live theme into .shopify/preview (git-ignored) and compares, touching nothing local
+function Preview-Shopify {
+    $t = Get-Target $Env
+    if (Test-Path $PreviewDir) { Remove-Item $PreviewDir -Recurse -Force }
+    New-Item -ItemType Directory -Force -Path $PreviewDir | Out-Null
+    Info "Downloading live theme ($Env, theme $($t.Theme)) to compare - local files are not touched..."
+    $raw = shopify theme pull --store $t.Store --theme $t.Theme --path $PreviewDir 2>&1
+    if ($LASTEXITCODE -ne 0) { Fail "shopify theme pull failed (login needed?):`n$($raw | Out-String)" }
+    return @(Compare-Theme)
+}
+
+function Apply-Changes($changes) {
+    foreach ($c in $changes) {
+        $dst = Join-Path $PSScriptRoot $c.Path
+        if ($c.Type -eq "D") {
+            if (Test-Path $dst) { Remove-Item $dst -Force }
+        } else {
+            New-Item -ItemType Directory -Force -Path (Split-Path $dst) | Out-Null
+            Copy-Item (Join-Path $PreviewDir $c.Path) $dst -Force
+        }
+        Write-Host "  applied: $($c.Type) $($c.Path)"
+    }
+    Commit-And-Push "Pull from Shopify ($Env): $($changes.Count) file(s)"
+    Remove-Item $PreviewDir -Recurse -Force -ErrorAction SilentlyContinue
+    Ok "Shopify changes applied and saved to git."
+}
+
+function Select-ByFiles($changes, [string]$list) {
+    $wanted = @($list -split "," | ForEach-Object { ($_.Trim() -replace '\\', '/') } | Where-Object { $_ })
+    $sel = @($changes | Where-Object { $wanted -contains $_.Path })
+    $unknown = @($wanted | Where-Object { ($changes.Path) -notcontains $_ })
+    if ($unknown.Count) { Fail "Not in the Shopify change list: $($unknown -join ', ')" }
+    return ,$sel
+}
+
 function Do-Pull {
     Require-Setup
     if (Has-Changes) { Fail "You have uncommitted changes. Run push or deploy first." }
@@ -384,16 +482,51 @@ function Do-Pull {
     Info "[1/2] Getting latest from git..."
     if (git remote) { Ensure-GitAuth; git pull; Check "git pull" }
 
-    Info "`n[2/2] Downloading latest theme from Shopify ($Env)..."
-    shopify theme pull -e $Env --path .
-    Check "shopify theme pull"
-
-    if (Has-Changes) {
-        Warn "Shopify had changes not in git (e.g. theme editor edits) - saving them."
-        Commit-And-Push "Pull latest from Shopify ($Env)"
-    } else {
-        Ok "Everything is up to date."
+    Info "`n[2/2] Checking the live Shopify theme ($Env)..."
+    $changes = @(Preview-Shopify)
+    if ($changes.Count -eq 0) {
+        Remove-Item $PreviewDir -Recurse -Force -ErrorAction SilentlyContinue
+        Ok "Local files already match the live theme. Everything is up to date."
+        return
     }
+
+    Show-Changes $changes
+
+    if ($script:NonInteractive) {
+        Write-Host ""
+        Write-Host "WAITING_FOR_USER: nothing was overwritten. Preview kept in .shopify/preview."
+        Write-Host "To apply all:      shop.ps1 apply-shopify"
+        Write-Host "To apply some:     shop.ps1 apply-shopify -Files ""path1,path2"""
+        Write-Host "To compare a file: git diff --no-index -- <path> .shopify/preview/<path>"
+        return
+    }
+
+    $ans = (Read-Host "`nTake these changes from Shopify? [A]ll / [C]hoose / [S]kip").Trim().ToUpper()
+    switch -Regex ($ans) {
+        "^A" { Apply-Changes $changes }
+        "^C" {
+            $nums = Read-Host "Numbers to take, comma-separated (e.g. 1,3)"
+            $idx = @($nums -split "," | ForEach-Object { [int]$_.Trim() - 1 } | Where-Object { $_ -ge 0 -and $_ -lt $changes.Count })
+            if ($idx.Count -eq 0) { Warn "Nothing selected - local files kept."; return }
+            Apply-Changes @($idx | ForEach-Object { $changes[$_] })
+        }
+        default {
+            Remove-Item $PreviewDir -Recurse -Force -ErrorAction SilentlyContinue
+            Warn "Skipped - local files kept. Note: a deploy will overwrite these live changes."
+        }
+    }
+}
+
+function Do-ApplyShopify {
+    $script:NonInteractive = $true
+    Require-Setup
+    if (Has-Changes) { Fail "You have uncommitted changes. Run push or deploy first." }
+    if (-not (Test-Path $PreviewDir)) { Fail "No Shopify preview found. Run pull (or autopull) first." }
+    $changes = @(Compare-Theme)
+    if ($changes.Count -eq 0) { Ok "Nothing to apply - local already matches the preview."; return }
+    if ($Files) { $changes = @(Select-ByFiles $changes $Files) }
+    if ($changes.Count -eq 0) { Warn "No matching files selected."; return }
+    Apply-Changes $changes
 }
 
 function Do-Push {
@@ -421,9 +554,9 @@ function Do-AutoPull {
         git status --short
         exit 0
     }
-    Write-Host "[auto-pull] Syncing latest from GitHub and Shopify ($Env)..."
+    Write-Host "[auto-pull] Git pull, then checking the live Shopify theme ($Env)..."
     Do-Pull
-    Write-Host "[auto-pull] Done. Latest commit: $(git log -1 --format='%h %s')"
+    Write-Host "[auto-pull] Latest commit: $(git log -1 --format='%h %s')"
 }
 
 # Read-only status check for the Claude Code SessionStart hook. Never pulls or changes anything.
@@ -464,7 +597,7 @@ function Do-SessionCheck {
 }
 
 function Show-Help {
-    Get-Content $PSCommandPath | Select-Object -Skip 1 -First 14 | ForEach-Object { $_ -replace '^#\s?', '' }
+    Get-Content $PSCommandPath | Select-Object -Skip 1 -First 15 | ForEach-Object { $_ -replace '^#\s?', '' }
 }
 
 switch ($Action) {
@@ -474,6 +607,7 @@ switch ($Action) {
     "deploy"  { Do-Deploy }
     "autopull" { Do-AutoPull }
     "session-check" { Do-SessionCheck }
+    "apply-shopify" { Do-ApplyShopify }
     "themes"  { Do-Themes }
     default   { Show-Help }
 }

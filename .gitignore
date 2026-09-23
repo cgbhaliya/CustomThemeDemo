@@ -6,3 +6,4 @@ Thumbs.db
 *.log
 .shopify/
 .claude/settings.local.json
+.vs/

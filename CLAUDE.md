@@ -9,11 +9,15 @@ This repo is a Shopify theme managed with `shop.ps1` (Shopify CLI + git).
 - The script cannot read keyboard input when you run it. Ask me questions in chat and pass the
   answers as parameters. Never run a command that waits for input.
 
-## Session start
-A SessionStart hook runs `shop.ps1 session-check` (read-only) and prints the project status.
-In your first reply, before working on my request, show that status briefly.
-- If the project is installed: ask whether to pull the latest from GitHub and the live Shopify theme.
-  Only if I say yes, run `... ./shop.ps1 autopull` and report the result. Never pull without my yes.
+## Session start (new or resumed)
+A SessionStart hook runs `shop.ps1 session-check` (read-only) whenever a session starts, is resumed
+(e.g. after reopening VS Code) or is cleared, and prints a `[session-check]` status.
+Every time a new `[session-check]` status appears, your NEXT reply must start by showing it briefly,
+even in the middle of an ongoing conversation and whatever I asked:
+- If the project is installed: ask with AskUserQuestion "Pull the latest from GitHub and the live
+  Shopify theme first?" (options: "Yes, pull first" / "No, continue"). Wait for the answer before
+  doing my request. Only if yes, run `... ./shop.ps1 autopull` and report the result, then do my
+  request. Never pull without my yes.
 - If the project is not installed: say so and offer to install it (see Installing).
 
 ## Installing
@@ -35,8 +39,21 @@ If any step fails with a login error (Shopify or GitHub), do not retry or work a
 run `.\shop.ps1 install` once in the VS Code terminal (Terminal -> New Terminal) to log in, then ask
 you again.
 
-## Pulling
-When I ask to pull / get latest / sync: run `... ./shop.ps1 autopull` and report the result.
+## Pulling (git first, then Shopify - never overwrite without asking)
+When I agree to the session pull, or ask to pull / get latest / sync:
+1. Run `... ./shop.ps1 autopull`. It does `git pull`, then downloads the live theme into
+   `.shopify/preview` and compares it with the local files. It does NOT overwrite anything.
+2. If it prints `SHOPIFY_CHANGES: 0` or "up to date", tell me everything matches and continue.
+3. Otherwise show me the list grouped as: changed on Shopify (M, local would be overwritten),
+   new on Shopify (A), not on Shopify (D, local file would be deleted). For small M files you may
+   show what changed with `git diff --no-index -- <path> .shopify/preview/<path>`.
+4. Ask with AskUserQuestion "Take these changes from the live Shopify theme?" options:
+   "Take all" / "Let me choose files" / "Keep my local files (skip)". Wait for my answer.
+   - Take all -> run `... ./shop.ps1 apply-shopify`
+   - Let me choose -> ask which files (multiSelect AskUserQuestion when 4 or fewer, otherwise a
+     numbered list I answer in text), then run `... ./shop.ps1 apply-shopify -Files "path1,path2"`
+   - Skip -> run nothing, and warn me that deploying would overwrite those live changes.
+5. Report what was applied and the commit, then continue with my original request.
 
 ## Deploying
 When I ask to deploy, publish, push live, or ship changes (in any wording), follow the steps in
