@@ -27,7 +27,7 @@ param(
 #  Set StoreDomain; leave theme IDs "" and install will let you pick a theme
 #  and save the IDs here automatically.
 # =============================================================================
-$StoreDomain       = ""   # e.g. "client-one.myshopify.com"
+$StoreDomain       = "customthemedemo.myshopify.com"   # e.g. "client-one.myshopify.com"
 $ProductionThemeId = ""   # e.g. "123456789012"   (find with: shopify theme list --store <domain>)
 $StagingThemeId    = ""   # optional, e.g. "234567890123" - leave "" if no staging theme
 # =============================================================================
