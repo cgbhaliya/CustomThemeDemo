@@ -22,6 +22,16 @@ param(
     [switch]$IncludeSettings
 )
 
+# =============================================================================
+#  PROJECT SETTINGS - fill these in once per project, then commit this file.
+#  Set StoreDomain; leave theme IDs "" and install will let you pick a theme
+#  and save the IDs here automatically.
+# =============================================================================
+$StoreDomain       = ""   # e.g. "client-one.myshopify.com"
+$ProductionThemeId = ""   # e.g. "123456789012"   (find with: shopify theme list --store <domain>)
+$StagingThemeId    = ""   # optional, e.g. "234567890123" - leave "" if no staging theme
+# =============================================================================
+
 # Native commands (git/shopify) are checked via $LASTEXITCODE, not exceptions
 $ErrorActionPreference = "Continue"
 Set-Location $PSScriptRoot
@@ -60,9 +70,63 @@ function Commit-And-Push([string]$msg) {
     Git-Push
 }
 
+function Normalize-Store([string]$d) {
+    $d = $d.Trim() -replace '^https?://', '' -replace '/.*$', ''
+    if ($d -notmatch "\.myshopify\.com$") { $d = "$d.myshopify.com" }
+    return $d
+}
+
+# Writes a value into the PROJECT SETTINGS block of this file and the current session
+function Set-Setting([string]$name, [string]$value) {
+    $text = [IO.File]::ReadAllText($PSCommandPath)
+    $pattern = '(?m)^(\$' + $name + '\s*=\s*)"[^"]*"'
+    if ($text -notmatch $pattern) { Fail "Could not find `$$name in shop.ps1 settings block." }
+    $safe = $value -replace '["$`]', ''
+    $text = [regex]::Replace($text, $pattern, '${1}"' + $safe + '"')
+    [IO.File]::WriteAllText($PSCommandPath, $text, (New-Object System.Text.UTF8Encoding $false))
+    Set-Variable -Name $name -Value $value -Scope Script
+}
+
+function Select-Theme($themes, [string]$title, [bool]$allowNone) {
+    Write-Host ""
+    Info $title
+    for ($i = 0; $i -lt $themes.Count; $i++) {
+        $t = $themes[$i]
+        $role = if ($t.role -eq "live" -or $t.role -eq "main") { "LIVE" } else { $t.role }
+        Write-Host ("  {0,2}) {1,-40} {2,-12} {3}" -f ($i + 1), $t.name, "[$role]", $t.id)
+    }
+    while ($true) {
+        $range = if ($allowNone) { "0-$($themes.Count)" } else { "1-$($themes.Count)" }
+        $pick = (Read-Host "Enter number ($range)").Trim()
+        if ($allowNone -and ($pick -eq "0" -or $pick -eq "")) { return $null }
+        $n = 0
+        if ([int]::TryParse($pick, [ref]$n) -and $n -ge 1 -and $n -le $themes.Count) { return $themes[$n - 1] }
+        Warn "Invalid choice, try again."
+    }
+}
+
+function Save-Toml([string]$store, [string]$prodId, [string]$stagingId) {
+    $toml = "[environments.production]`nstore = `"$store`"`ntheme = `"$prodId`"`n"
+    if ($stagingId -match "^\d+$") {
+        $toml += "`n[environments.staging]`nstore = `"$store`"`ntheme = `"$stagingId`"`n"
+    }
+    Write-NoBom $TomlFile $toml
+}
+
+function Config-Filled { return ($StoreDomain.Trim() -and $ProductionThemeId.Trim()) }
+
+# Settings block at the top of this file is the source of truth when filled in
+function Apply-Config {
+    if (-not (Config-Filled)) { return }
+    $store = Normalize-Store $StoreDomain
+    if ($ProductionThemeId.Trim() -notmatch "^\d+$") { Fail "ProductionThemeId in shop.ps1 must be a number." }
+    Save-Toml $store $ProductionThemeId.Trim() $StagingThemeId.Trim()
+}
+
 function Require-Setup {
     git rev-parse --is-inside-work-tree 2>&1 | Out-Null
     if ($LASTEXITCODE -ne 0) { Fail "This folder is not a git repository." }
+    Apply-Config
     if (-not (Test-Path $TomlFile)) { Fail "Project not set up yet. Run: .\shop.ps1 install" }
     if (-not (Has-Command "shopify")) { Fail "Shopify CLI not found. Run: .\shop.ps1 install" }
 }
@@ -98,27 +162,46 @@ function Do-Install {
     if ($LASTEXITCODE -ne 0) { Fail "Clone the repo first, then run install inside it." }
     Ensure-Tools
 
-    if (-not (Test-Path $TomlFile)) {
-        Info "`nStore setup"
-        $store = (Read-Host "Store domain (e.g. client-one.myshopify.com)").Trim()
-        if ($store -notmatch "\.myshopify\.com$") { $store = "$store.myshopify.com" }
-
-        Info "`nFetching themes from $store (a browser login may open)..."
-        shopify theme list --store $store
-        Check "shopify theme list"
-
-        $themeId = (Read-Host "`nTheme ID to use as PRODUCTION").Trim()
-        if ($themeId -notmatch "^\d+$") { Fail "Theme ID must be a number." }
-        $stagingId = (Read-Host "Theme ID for STAGING (press Enter to skip)").Trim()
-
-        $toml = "[environments.production]`nstore = `"$store`"`ntheme = `"$themeId`"`n"
-        if ($stagingId -match "^\d+$") {
-            $toml += "`n[environments.staging]`nstore = `"$store`"`ntheme = `"$stagingId`"`n"
+    # --- Store domain: from settings, or ask once and save into shop.ps1 ---
+    if (-not $StoreDomain.Trim()) {
+        if (Test-Path $TomlFile) {
+            Ok "Using existing shopify.theme.toml"
+        } else {
+            $d = (Read-Host "Store domain (e.g. client-one.myshopify.com)").Trim()
+            if (-not $d) { Fail "Store domain is required." }
+            Set-Setting "StoreDomain" $d
         }
-        Write-NoBom $TomlFile $toml
-        Ok "Saved shopify.theme.toml"
-    } else {
-        Ok "Using existing shopify.theme.toml"
+    }
+
+    # --- Theme IDs: from settings, or pick from a list and save into shop.ps1 ---
+    if ($StoreDomain.Trim() -and -not $ProductionThemeId.Trim()) {
+        $store = Normalize-Store $StoreDomain
+        Info "`nFetching themes from $store (a browser login may open the first time)..."
+        $raw = shopify theme list --store $store --json 2>&1
+        Check "shopify theme list"
+        try {
+            $jsonText = ($raw | Out-String)
+            $jsonText = $jsonText.Substring($jsonText.IndexOf("["))
+            $themes = @($jsonText | ConvertFrom-Json)
+        } catch { Fail "Could not read the theme list from Shopify CLI:`n$raw" }
+        if ($themes.Count -eq 0) { Fail "No themes found on $store." }
+
+        $prod = Select-Theme $themes "Select the PRODUCTION theme" $false
+        Set-Setting "ProductionThemeId" "$($prod.id)"
+        Ok "Production theme: $($prod.name) ($($prod.id))"
+
+        $stg = Select-Theme $themes "Select a STAGING theme (0 = none)" $true
+        if ($stg) {
+            Set-Setting "StagingThemeId" "$($stg.id)"
+            Ok "Staging theme: $($stg.name) ($($stg.id))"
+        }
+    }
+
+    if (Config-Filled) {
+        Apply-Config
+        Ok "Store and theme saved in shop.ps1 and shopify.theme.toml"
+    } elseif (-not (Test-Path $TomlFile)) {
+        Fail "Store/theme not configured."
     }
 
     Write-SupportFiles
@@ -128,6 +211,7 @@ function Do-Install {
         Write-Host "Use '.\shop.ps1 pull' if you want to refresh from Shopify."
         # Make sure CLI is logged in to this store
         shopify theme list -e production | Out-Null
+        if (Has-Changes) { Commit-And-Push "Save Shopify store/theme settings" }
         return
     }
 
