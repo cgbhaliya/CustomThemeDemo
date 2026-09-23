@@ -1,9 +1,0 @@
-<script type="text/javascript" src="https://d354wf6w0s8ijx.cloudfront.net/js/config.js?s=16680453&v=dq376r4qmecdyixvxjr8bb5q&shop=customthemedemo.myshopify.com" async></script>
-<script type="text/javascript" src="https://d354wf6w0s8ijx.cloudfront.net/js/tracker.js?s=16680453&v=dq376r4qmecdyixvxjr8bb5q&shop=customthemedemo.myshopify.com" async></script>
-<script type="text/javascript" src="https://cdn.sparq.ai/scripts/v3init.js?s=16680453&v=b9z9lwcsgus35i9m8d2ulvyq&shop=customthemedemo.myshopify.com" async></script>
-
-{% comment %} include if theme-migrations assets file exists {% endcomment %}
-{% capture the_snippet_content %}{% render 'sparq-theme-migration' %}{% endcapture %}
-{% unless the_snippet_content contains "Liquid error" %}
-  {% render 'sparq-theme-migration' %}
-{% endunless %}

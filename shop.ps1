@@ -37,8 +37,8 @@ param(
 #  Set StoreDomain; leave theme IDs "" and install will let you pick a theme
 #  and save the IDs here automatically.
 # =============================================================================
-$StoreDomain       = "customthemedemo.myshopify.com"   # e.g. "client-one.myshopify.com"
-$ProductionThemeId = "148640858181"   # e.g. "123456789012"   (find with: shopify theme list --store <domain>)
+$StoreDomain       = ""   # e.g. "client-one.myshopify.com"
+$ProductionThemeId = ""   # e.g. "123456789012"   (find with: shopify theme list --store <domain>)
 $StagingThemeId    = ""   # optional, e.g. "234567890123" - leave "" if no staging theme
 # =============================================================================
 
@@ -200,14 +200,41 @@ function Ensure-Tools {
     if (git remote) { Ensure-GitAuth; Ok "GitHub login OK." }
 }
 
+# Files that must never be uploaded to Shopify. NOTE: .shopifyignore applies to pull too,
+# so only non-theme files belong here (never config/settings_data.json etc.).
+$ShopifyIgnoreLines = @(
+    "shop.ps1", "shopify.theme.toml",
+    "*.md", "README*", "CLAUDE.md",
+    ".claude/*", ".vscode/*", ".github/*", ".idea/*",
+    ".gitignore", ".gitattributes", ".shopifyignore", ".editorconfig",
+    ".env", ".env.*",
+    "package.json", "package-lock.json", "yarn.lock", "pnpm-lock.yaml", "node_modules/*",
+    "*.log", ".DS_Store", "Thumbs.db", "*.zip"
+)
+$GitIgnoreLines = @(
+    "node_modules/", ".DS_Store", "Thumbs.db", ".env", ".env.*", "*.log",
+    ".shopify/", ".claude/settings.local.json"
+)
+
+# Creates the file, or appends any missing lines to an existing one
+function Merge-Lines([string]$path, [string[]]$lines) {
+    $existing = @()
+    if (Test-Path $path) { $existing = @(Get-Content $path | ForEach-Object { $_.Trim() }) }
+    $missing = @($lines | Where-Object { $existing -notcontains $_ })
+    if ($missing.Count -eq 0) { return }
+    $text = ""
+    if (Test-Path $path) {
+        $text = [IO.File]::ReadAllText($path)
+        if ($text.Length -gt 0 -and -not $text.EndsWith("`n")) { $text += "`n" }
+    }
+    $text += ($missing -join "`n") + "`n"
+    Write-NoBom $path $text
+    Info "Updated $([IO.Path]::GetFileName($path)): added $($missing.Count) entr$(if ($missing.Count -eq 1) {'y'} else {'ies'})"
+}
+
 function Write-SupportFiles {
-    if (-not (Test-Path ".gitignore")) {
-        Write-NoBom ".gitignore" "node_modules/`n.DS_Store`nThumbs.db`n.env`n*.log`n.shopify/`n"
-    }
-    # Keep non-theme files out of Shopify uploads
-    if (-not (Test-Path ".shopifyignore")) {
-        Write-NoBom ".shopifyignore" "shop.ps1`n*.md`n.vscode/`n.claude/`n.gitignore`n.shopifyignore`nshopify.theme.toml`n"
-    }
+    Merge-Lines (Join-Path $PSScriptRoot ".gitignore") $GitIgnoreLines
+    Merge-Lines (Join-Path $PSScriptRoot ".shopifyignore") $ShopifyIgnoreLines
 }
 
 # ----------------------------------------------------------------- actions ---
@@ -226,14 +253,19 @@ function Apply-SetParams {
 function Get-Themes([string]$store) {
     Info "Fetching themes from $store..."
     $raw = shopify theme list --store $store --json 2>&1
-    if ($LASTEXITCODE -ne 0) {
-        Fail "Could not list themes (Shopify login needed or no access to $store). Run '.\shop.ps1 install' once in the VS Code terminal to log in.`n$raw"
+    $exit = $LASTEXITCODE
+    $allText = ($raw | Out-String)
+    if ($exit -ne 0) {
+        Fail "Could not list themes (Shopify login needed or no access to $store). Run '.\shop.ps1 install' once in the VS Code terminal to log in.`n$allText"
     }
     try {
-        $jsonText = ($raw | Out-String)
-        $jsonText = $jsonText.Substring($jsonText.IndexOf("["))
-        $themes = @($jsonText | ConvertFrom-Json)
-    } catch { Fail "Could not read the theme list from Shopify CLI:`n$raw" }
+        # Shopify CLI writes hints to stderr; PowerShell wraps those as ErrorRecords.
+        # Parse JSON only from the normal (stdout) lines.
+        $stdout = ($raw | Where-Object { $_ -isnot [System.Management.Automation.ErrorRecord] } | Out-String)
+        $start = $stdout.IndexOf("[")
+        if ($start -lt 0) { throw "no JSON array in output" }
+        $themes = @($stdout.Substring($start) | ConvertFrom-Json)
+    } catch { Fail "Could not read the theme list from Shopify CLI:`n$allText" }
     if ($themes.Count -eq 0) { Fail "No themes found on $store." }
     return $themes
 }
@@ -321,6 +353,7 @@ function Do-Install {
 
 function Do-Deploy {
     Require-Setup
+    Write-SupportFiles   # keep ignore files current; committed with this change
     if (-not $Message) { $Message = "Deploy to $Env $(Get-Date -Format 'yyyy-MM-dd HH:mm')" }
 
     Info "`n[1/2] Committing and pushing to git..."
@@ -365,6 +398,7 @@ function Do-Pull {
 
 function Do-Push {
     Require-Setup
+    Write-SupportFiles   # keep ignore files current; committed with this change
     if (-not $Message) { $Message = "Update $(Get-Date -Format 'yyyy-MM-dd HH:mm')" }
     Info "Committing and pushing to git (Shopify not touched)..."
     Commit-And-Push $Message
