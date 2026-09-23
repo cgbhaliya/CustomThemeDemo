@@ -15,7 +15,7 @@
           "type": "text",
           "name": "t:names.heading",
           "settings": {
-            "text": "<p>Browse our latest products</p>",
+            "text": "<p>Browse our latest products from catalog</p>",
             "width": "fit-content",
             "max_width": "normal",
             "alignment": "left",
