@@ -1,0 +1,344 @@
+{%- comment -%}
+============================================================
+  FILE: snippets/custom-jsonld.liquid
+  PURPOSE: JSON-LD structured data — fully dynamic
+  SECTIONS:
+    1. Homepage — Organization + LocalBusiness + WebSite
+    2. Homepage — FAQPage
+    3. Product pages — Product schema
+    4. Product pages — BreadcrumbList
+    5. Product pages — FAQPage (from metafields)
+    6. Collection pages — BreadcrumbList
+  DYNAMIC VARIABLES USED:
+    shop.name, shop.url, shop.description
+    shop.metafields.custom.* for org-level fields
+    product.* for all product fields
+    collection.* for collection fields
+============================================================
+{%- endcomment -%}
+
+{%- comment -%} =============================================
+  SECTION 1 & 2 — HOMEPAGE SCHEMAS
+  Renders on: index (homepage) only
+============================================= {%- endcomment -%}
+{% if template == 'index' %}
+
+  {%- comment -%} Assign org-level metafields with fallbacks {%- endcomment -%}
+  {%- assign org_legal_name      = shop.metafields.custom.legal_name       | default: shop.name -%}
+  {%- assign org_alternate_names = shop.metafields.custom.alternate_names  | default: '' -%}
+  {%- assign org_logo            = shop.metafields.custom.logo_url         | default: '' -%}
+  {%- assign org_founding_date   = shop.metafields.custom.founding_date    | default: '' -%}
+  {%- assign org_parent_name     = shop.metafields.custom.parent_org_name  | default: '' -%}
+  {%- assign org_description     = shop.metafields.custom.org_description  | default: shop.description -%}
+  {%- assign org_street          = shop.metafields.custom.street_address   | default: '' -%}
+  {%- assign org_city            = shop.metafields.custom.city             | default: '' -%}
+  {%- assign org_region          = shop.metafields.custom.region           | default: '' -%}
+  {%- assign org_postcode        = shop.metafields.custom.postcode         | default: '' -%}
+  {%- assign org_country         = shop.metafields.custom.country_code     | default: 'GB' -%}
+  {%- assign org_telephone       = shop.metafields.custom.telephone        | default: '' -%}
+  {%- assign org_email           = shop.metafields.custom.email            | default: '' -%}
+  {%- assign org_price_range     = shop.metafields.custom.price_range      | default: '££' -%}
+  {%- assign org_currency        = shop.metafields.custom.currency         | default: 'GBP' -%}
+  {%- assign org_language        = shop.metafields.custom.language         | default: 'en-GB' -%}
+  {%- assign org_area_served     = shop.metafields.custom.area_served      | default: 'United Kingdom' -%}
+
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "Organization",
+        "@id": "{{ shop.url }}/#organization",
+        "name": "{{ shop.name | escape }}",
+        "legalName": "{{ org_legal_name | escape }}",
+        {% if org_alternate_names != blank %}
+        "alternateName": {{ org_alternate_names | escape | split: '|' | json }},
+        {% endif %}
+        "url": "{{ shop.url }}",
+        {% if org_logo != blank %}
+        "logo": "{{ org_logo | escape }}",
+        {% endif %}
+        {% if org_founding_date != blank %}
+        "foundingDate": "{{ org_founding_date | escape }}",
+        {% endif %}
+        {% if org_parent_name != blank %}
+        "parentOrganization": {
+          "@type": "Organization",
+          "name": "{{ org_parent_name | escape }}"
+        },
+        {% endif %}
+        "description": "{{ org_description | strip_html | strip_newlines | truncate: 300 | escape }}",
+        "address": {
+          "@type": "PostalAddress",
+          "streetAddress": "{{ org_street | escape }}",
+          "addressLocality": "{{ org_city | escape }}",
+          "addressRegion": "{{ org_region | escape }}",
+          "postalCode": "{{ org_postcode | escape }}",
+          "addressCountry": "{{ org_country | escape }}"
+        },
+        "areaServed": { "@type": "Country", "name": "{{ org_area_served | escape }}" },
+        {% if org_telephone != blank or org_email != blank %}
+        "contactPoint": {
+          "@type": "ContactPoint",
+          {% if org_telephone != blank %}"telephone": "{{ org_telephone | escape }}",{% endif %}
+          {% if org_email != blank %}"email": "{{ org_email | escape }}",{% endif %}
+          "contactType": "sales",
+          "areaServed": "{{ org_country | escape }}",
+          "availableLanguage": "{{ org_language | escape }}"
+        },
+        {% endif %}
+        "knowsAbout": {{ shop.metafields.custom.knows_about.value | default: '[]' | json }}
+      },
+      {
+        "@type": "LocalBusiness",
+        "@id": "{{ shop.url }}/#localbusiness",
+        "name": "{{ shop.name | escape }}",
+        {% if org_logo != blank %}
+        "image": "{{ org_logo | escape }}",
+        {% endif %}
+        {% if org_telephone != blank %}"telephone": "{{ org_telephone | escape }}",{% endif %}
+        {% if org_email != blank %}"email": "{{ org_email | escape }}",{% endif %}
+        "address": {
+          "@type": "PostalAddress",
+          "streetAddress": "{{ org_street | escape }}",
+          "addressLocality": "{{ org_city | escape }}",
+          "addressRegion": "{{ org_region | escape }}",
+          "postalCode": "{{ org_postcode | escape }}",
+          "addressCountry": "{{ org_country | escape }}"
+        },
+        "url": "{{ shop.url }}",
+        "openingHoursSpecification": {{ shop.metafields.custom.opening_hours.value | default: '[]' | json }},
+        "priceRange": "{{ org_price_range | escape }}"
+      },
+      {
+        "@type": "WebSite",
+        "@id": "{{ shop.url }}/#website",
+        "url": "{{ shop.url }}",
+        "name": "{{ shop.name | escape }}",
+        "description": "{{ org_description | strip_html | strip_newlines | truncate: 200 | escape }}",
+        "publisher": { "@id": "{{ shop.url }}/#organization" },
+        "potentialAction": {
+          "@type": "SearchAction",
+          "target": {
+            "@type": "EntryPoint",
+            "urlTemplate": "{{ shop.url }}/search?q={search_term_string}"
+          },
+          "query-input": "required name=search_term_string"
+        },
+        "inLanguage": "{{ org_language | escape }}"
+      }
+    ]
+  }
+  </script>
+
+  {%- comment -%} Homepage FAQPage — driven by shop metafield custom.homepage_faq {%- endcomment -%}
+  {% if shop.metafields.custom.homepage_faq %}
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    "mainEntity": [
+      {% assign hfaqs = shop.metafields.custom.homepage_faq.value %}
+      {% for faq in hfaqs %}
+      {
+        "@type": "Question",
+        "name": "{{ faq.question | escape }}",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "{{ faq.answer | escape }}"
+        }
+      }{% unless forloop.last %},{% endunless %}
+      {% endfor %}
+    ]
+  }
+  </script>
+  {% endif %}
+
+{% endif %}
+
+{%- comment -%} =============================================
+  SECTION 3, 4 & 5 — PRODUCT PAGE SCHEMAS
+  Renders on: product pages only
+============================================= {%- endcomment -%}
+{% if template contains 'product' %}
+
+  {%- comment -%} Assign product-level metafields with fallbacks {%- endcomment -%}
+  {%- assign product_brand        = product.metafields.custom.brand.value        | default: product.vendor | default: shop.name -%}
+  {%- assign product_manufacturer = product.metafields.custom.manufacturer.value | default: product.vendor | default: shop.name -%}
+  {%- assign product_model        = product.metafields.custom.model_number.value | default: product.selected_or_first_available_variant.sku | default: product.id -%}
+  {%- assign product_colour       = product.metafields.custom.colour.value       | default: '' -%}
+  {%- assign product_material     = product.metafields.custom.material.value     | default: '' -%}
+  {%- assign product_weight_value = product.metafields.custom.weight_value.value | default: '' -%}
+  {%- assign product_weight_unit  = product.metafields.custom.weight_unit.value  | default: 'KGM' -%}
+  {%- assign product_currency     = shop.metafields.custom.currency              | default: 'GBP' -%}
+  {%- assign seller_id            = shop.url | append: '/#organization' -%}
+  {%- assign next_year            = 'now' | date: '%Y' | plus: 1 -%}
+
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "Product",
+    "@id": "{{ shop.url }}{{ product.url }}#product",
+    "name": "{{ product.title | escape }}",
+    "sku": "{{ product.selected_or_first_available_variant.sku | default: product.id }}",
+    "mpn": "{{ product_model | escape }}",
+    "description": "{{ product.description | strip_html | strip_newlines | truncate: 500 | escape }}",
+    "image": [
+      {% for image in product.images %}
+        "{{ image | image_url: width: 1200 }}"{% unless forloop.last %},{% endunless %}
+      {% endfor %}
+    ],
+    "brand": {
+      "@type": "Brand",
+      "name": "{{ product_brand | escape }}"
+    },
+    "manufacturer": {
+      "@type": "Organization",
+      "name": "{{ product_manufacturer | escape }}"
+    },
+    {% if product_colour != blank %}
+    "color": "{{ product_colour | escape }}",
+    {% endif %}
+    {% if product_material != blank %}
+    "material": "{{ product_material | escape }}",
+    {% endif %}
+    {% if product_weight_value != blank %}
+    "weight": {
+      "@type": "QuantitativeValue",
+      "value": "{{ product_weight_value | escape }}",
+      "unitCode": "{{ product_weight_unit | escape }}"
+    },
+    {% endif %}
+    "url": "{{ shop.url }}{{ product.url }}",
+    "offers": {
+      "@type": "Offer",
+      "url": "{{ shop.url }}{{ product.url }}",
+      "priceCurrency": "{{ product_currency | escape }}",
+      "price": "{{ product.price | money_without_currency | remove: ',' }}",
+      "priceValidUntil": "{{ next_year }}-12-31",
+      "availability": "{% if product.available %}https://schema.org/InStock{% else %}https://schema.org/OutOfStock{% endif %}",
+      "itemCondition": "https://schema.org/NewCondition",
+      "seller": {
+        "@type": "Organization",
+        "name": "{{ shop.name | escape }}",
+        "@id": "{{ seller_id }}"
+      },
+      "shippingDetails": {
+        "@type": "OfferShippingDetails",
+        "shippingRate": {
+          "@type": "MonetaryAmount",
+          "value": "0",
+          "currency": "{{ product_currency | escape }}"
+        },
+        "shippingDestination": {
+          "@type": "DefinedRegion",
+          "addressCountry": "{{ shop.metafields.custom.country_code | default: 'GB' }}"
+        },
+        "deliveryTime": {
+          "@type": "ShippingDeliveryTime",
+          "handlingTime": {
+            "@type": "QuantitativeValue",
+            "minValue": {{ shop.metafields.custom.handling_min | default: 1 }},
+            "maxValue": {{ shop.metafields.custom.handling_max | default: 3 }},
+            "unitCode": "DAY"
+          },
+          "transitTime": {
+            "@type": "QuantitativeValue",
+            "minValue": {{ shop.metafields.custom.transit_min | default: 2 }},
+            "maxValue": {{ shop.metafields.custom.transit_max | default: 10 }},
+            "unitCode": "DAY"
+          }
+        }
+      }
+    }
+  }
+  </script>
+
+  {%- comment -%} BreadcrumbList — product page {%- endcomment -%}
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    "itemListElement": [
+      {
+        "@type": "ListItem",
+        "position": 1,
+        "name": "Home",
+        "item": "{{ shop.url }}/"
+      }
+      {% if collection and collection.title != blank %},
+      {
+        "@type": "ListItem",
+        "position": 2,
+        "name": "{{ collection.title | escape }}",
+        "item": "{{ shop.url }}{{ collection.url }}"
+      },
+      {
+        "@type": "ListItem",
+        "position": 3,
+        "name": "{{ product.title | escape }}",
+        "item": "{{ shop.url }}{{ product.url }}"
+      }
+      {% else %},
+      {
+        "@type": "ListItem",
+        "position": 2,
+        "name": "{{ product.title | escape }}",
+        "item": "{{ shop.url }}{{ product.url }}"
+      }
+      {% endif %}
+    ]
+  }
+  </script>
+
+  {%- comment -%} Product FAQPage — driven by product metafield custom.pdp_faq {%- endcomment -%}
+  {% if product.metafields.custom.pdp_faq %}
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    "mainEntity": [
+      {% assign faqs = product.metafields.custom.pdp_faq.value %}
+      {% for faq in faqs %}
+      {
+        "@type": "Question",
+        "name": "{{ faq.question | escape }}",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "{{ faq.answer | escape }}"
+        }
+      }{% unless forloop.last %},{% endunless %}
+      {% endfor %}
+    ]
+  }
+  </script>
+  {% endif %}
+
+{% endif %}
+
+{%- comment -%} =============================================
+  SECTION 6 — COLLECTION PAGE SCHEMA
+  Renders on: collection pages only
+============================================= {%- endcomment -%}
+{% if template contains 'collection' %}
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    "itemListElement": [
+      {
+        "@type": "ListItem",
+        "position": 1,
+        "name": "Home",
+        "item": "{{ shop.url }}/"
+      },
+      {
+        "@type": "ListItem",
+        "position": 2,
+        "name": "{{ collection.title | escape }}",
+        "item": "{{ shop.url }}{{ collection.url }}"
+      }
+    ]
+  }
+  </script>
+{% endif %}
