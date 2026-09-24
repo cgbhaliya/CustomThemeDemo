@@ -35,9 +35,12 @@ AskUserQuestion tool (clickable options in the chat), never as plain text questi
    - "Which theme is STAGING?" - first option "No staging theme", then up to 3 unpublished themes.
 4. Run `... ./shop.ps1 install -SetStore <domain> -SetTheme <productionId> [-SetStaging <stagingId>] -NoPrompt`
 5. Report what was downloaded, the commit, and whether the GitHub push worked.
-If any step fails with a login error (Shopify or GitHub), do not retry or work around it. Tell me to
-run `.\shop.ps1 install` once in the VS Code terminal (Terminal -> New Terminal) to log in, then ask
-you again.
+Listing themes needs only the Shopify login, not GitHub. If a command fails:
+- `GITHUB_LOGIN_NEEDED` -> tell me to run `gh auth login --web` once in the VS Code terminal
+  (Terminal -> New Terminal) and approve in the browser; when I say done, rerun the same command.
+- Shopify login / "Could not list themes" -> tell me to run `shopify theme list --store <domain>`
+  once in the VS Code terminal to log in; when I say done, rerun the same command.
+Do not try to work around logins yourself, and keep the answers I already gave (store, themes).
 
 ## Pulling (git first, then Shopify - never overwrite without asking)
 When I agree to the session pull, or ask to pull / get latest / sync:

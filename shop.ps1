@@ -41,8 +41,8 @@ param(
 #  Set StoreDomain; leave theme IDs "" and install will let you pick a theme
 #  and save the IDs here automatically.
 # =============================================================================
-$StoreDomain       = "customthemedemo.myshopify.com"   # e.g. "client-one.myshopify.com"
-$ProductionThemeId = "148640858181"   # e.g. "123456789012"   (find with: shopify theme list --store <domain>)
+$StoreDomain       = ""   # e.g. "client-one.myshopify.com"
+$ProductionThemeId = ""   # e.g. "123456789012"   (find with: shopify theme list --store <domain>)
 $StagingThemeId    = ""   # optional, e.g. "234567890123" - leave "" if no staging theme
 # =============================================================================
 
@@ -74,39 +74,58 @@ function Refresh-Path {
 
 # Makes sure git can authenticate to GitHub using GitHub CLI (gh).
 # Runs once per command; safe to repeat.
-$script:GitAuthDone = $false
 $script:NonInteractive = $false
+# True if git can already reach the remote without any prompt (e.g. Git Credential Manager login)
+function Test-GitAccess {
+    $oldPrompt = $env:GIT_TERMINAL_PROMPT; $oldGcm = $env:GCM_INTERACTIVE
+    $env:GIT_TERMINAL_PROMPT = "0"
+    $env:GCM_INTERACTIVE = "never"
+    git ls-remote --heads origin 2>&1 | Out-Null
+    $ok = ($LASTEXITCODE -eq 0)
+    $env:GIT_TERMINAL_PROMPT = $oldPrompt; $env:GCM_INTERACTIVE = $oldGcm
+    return $ok
+}
+
+function Install-GhCli {
+    Warn "GitHub CLI not found - installing..."
+    if (Has-Command "winget") {
+        winget install --id GitHub.cli -e --silent --accept-source-agreements --accept-package-agreements 2>&1 | Out-Null
+    }
+    Refresh-Path
+    if (-not (Has-Command "gh") -and (Test-Path "$env:ProgramFiles\GitHub CLI\gh.exe")) {
+        $env:Path += ";$env:ProgramFiles\GitHub CLI"
+    }
+    return (Has-Command "gh")
+}
+
+# Makes sure git can push/pull to GitHub. Uses an existing git login if there is one;
+# otherwise signs in with GitHub CLI (gh). Only the browser sign-in needs a person.
+$script:GitAuthDone = $false
 function Ensure-GitAuth {
     if ($script:GitAuthDone) { return }
     $url = "$(git remote get-url origin 2>&1)"
     if ($LASTEXITCODE -ne 0 -or $url -notmatch "^https://github\.com/") { $script:GitAuthDone = $true; return }
 
+    # 1) Already works (Git Credential Manager, earlier gh setup, ...) - nothing to do
+    if (Test-GitAccess) { $script:GitAuthDone = $true; return }
+
+    # 2) Use GitHub CLI; installing it needs no input, so this is fine from Claude too
     if (-not (Has-Command "gh")) {
-        if ($script:NonInteractive) { Fail "GitHub CLI not installed. Run .\shop.ps1 pull once in the VS Code terminal." }
-        Warn "GitHub CLI not found - installing..."
-        if (Has-Command "winget") {
-            winget install --id GitHub.cli -e --silent --accept-source-agreements --accept-package-agreements
-        }
-        Refresh-Path
-        if (-not (Has-Command "gh") -and (Test-Path "$env:ProgramFiles\GitHub CLI\gh.exe")) {
-            $env:Path += ";$env:ProgramFiles\GitHub CLI"
-        }
-        if (-not (Has-Command "gh")) { Fail "Could not install GitHub CLI. Install it from https://cli.github.com and run again." }
+        if (-not (Install-GhCli)) { Fail "GITHUB_LOGIN_NEEDED: could not install GitHub CLI. Install it from https://cli.github.com, then run 'gh auth login' in the VS Code terminal." }
     }
 
     gh auth status --hostname github.com 2>&1 | Out-Null
     if ($LASTEXITCODE -ne 0) {
-        if ($script:NonInteractive) { Fail "Not signed in to GitHub. Run .\shop.ps1 pull once in the VS Code terminal to sign in." }
+        if ($script:NonInteractive) {
+            Fail "GITHUB_LOGIN_NEEDED: git has no GitHub login. Run 'gh auth login --web' in the VS Code terminal (Terminal -> New Terminal), approve in the browser, then ask Claude again."
+        }
         Info "`nSign in to GitHub - copy the code shown below, then approve in the browser..."
         gh auth login --hostname github.com --git-protocol https --web
-        if ($LASTEXITCODE -ne 0) {
-            Fail "GitHub login failed. Run this script from the VS Code terminal (not an AI chat), so you can complete the sign-in."
-        }
+        if ($LASTEXITCODE -ne 0) { Fail "GitHub login failed." }
     }
 
-    # Tell git to use the GitHub CLI login for github.com
     gh auth setup-git --hostname github.com 2>&1 | Out-Null
-    Check "gh auth setup-git"
+    if (-not (Test-GitAccess)) { Fail "GITHUB_LOGIN_NEEDED: signed in to GitHub CLI, but git still cannot access $url. Check you have access to this repo." }
     $script:GitAuthDone = $true
 }
 
@@ -189,7 +208,7 @@ function Require-Setup {
     if (-not (Has-Command "shopify")) { Fail "Shopify CLI not found. Run: .\shop.ps1 install" }
 }
 
-function Ensure-Tools {
+function Ensure-Tools([switch]$SkipGit) {
     Info "Checking tools..."
     if (-not (Has-Command "git"))  { Fail "Git is not installed. Get it from https://git-scm.com" }
     if (-not (Has-Command "node")) { Fail "Node.js is not installed. Get the LTS from https://nodejs.org" }
@@ -201,7 +220,7 @@ function Ensure-Tools {
         if (-not (Has-Command "shopify")) { Fail "Shopify CLI installed, but not on PATH yet. Restart VS Code and run install again." }
     }
     Ok "git, node and shopify CLI are available."
-    if (git remote) { Ensure-GitAuth; Ok "GitHub login OK." }
+    if (-not $SkipGit -and (git remote)) { Ensure-GitAuth; Ok "GitHub access OK." }
 }
 
 # Files that must never be uploaded to Shopify. NOTE: .shopifyignore applies to pull too,
@@ -279,7 +298,7 @@ function Do-Themes {
     $script:NonInteractive = $true
     if ($SetStore) { Set-Setting "StoreDomain" (Normalize-Store $SetStore) }
     if (-not $StoreDomain.Trim()) { Fail "NEED_STORE: pass -SetStore <handle>.myshopify.com" }
-    Ensure-Tools
+    Ensure-Tools -SkipGit
     $store = Normalize-Store $StoreDomain
     $themes = Get-Themes $store
     Write-Host "THEMES for ${store}:"
