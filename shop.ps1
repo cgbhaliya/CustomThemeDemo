@@ -41,8 +41,8 @@ param(
 #  Set StoreDomain; leave theme IDs "" and install will let you pick a theme
 #  and save the IDs here automatically.
 # =============================================================================
-$StoreDomain       = "customthemedemo.myshopify.com"   # e.g. "client-one.myshopify.com"
-$ProductionThemeId = "148640858181"   # e.g. "123456789012"   (find with: shopify theme list --store <domain>)
+$StoreDomain       = ""   # e.g. "client-one.myshopify.com"
+$ProductionThemeId = ""   # e.g. "123456789012"   (find with: shopify theme list --store <domain>)
 $StagingThemeId    = ""   # optional, e.g. "234567890123" - leave "" if no staging theme
 # =============================================================================
 
@@ -447,7 +447,7 @@ function Compare-Theme {
     foreach ($k in ($local.Keys | Sort-Object)) {
         if (-not $remote.ContainsKey($k)) { $out += [pscustomobject]@{ Type = "D"; Path = $k } }
     }
-    return ,$out
+    return $out    # callers wrap in @() - never return ,$x (empty-list bug)
 }
 
 function Show-Changes($changes) {
@@ -491,7 +491,7 @@ function Select-ByFiles($changes, [string]$list) {
     $sel = @($changes | Where-Object { $wanted -contains $_.Path })
     $unknown = @($wanted | Where-Object { ($changes.Path) -notcontains $_ })
     if ($unknown.Count) { Fail "Not in the Shopify change list: $($unknown -join ', ')" }
-    return ,$sel
+    return $sel
 }
 
 function Do-Pull {
